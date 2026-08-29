@@ -1,0 +1,14 @@
+# Entornos y caches
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Datos locales (corpus, audio, índices, grafos, clips, estado)
+data/
+
+# Configuración local del asistente
+.claude/
+
+# Logs
+*.log
