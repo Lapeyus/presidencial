@@ -268,7 +268,7 @@ const DIR = __DIRECTORIO__;
 let q = "", filtro = "todas", sortCol = "menciones", sortDir = -1;
 function filtros(){
   const el = document.getElementById("filtros");
-  el.innerHTML = [["todas","Todas"],["destacadas","Con perfil completo"],["frecuentes","10+ menciones"]].map(([c,l])=>
+  el.innerHTML = [["todas","Todas"],["persona","Personas"],["cargo","Cargos"],["colectivo","Colectivos"],["destacadas","Con perfil completo"],["frecuentes","10+ menciones"]].map(([c,l])=>
     `<button class="fchip${filtro===c?" on":""}" data-c="${c}">${l}</button>`).join("") +
     `<input id="buscar" placeholder="Buscar entre ${DIR.length.toLocaleString("es")} personas…" value="${esc(q)}">`;
   el.querySelectorAll(".fchip").forEach(b=>b.onclick=()=>{filtro=b.dataset.c; filtros(); tabla();});
@@ -291,14 +291,15 @@ function tabla(){
   });
   const norm = s=>String(s??"").toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g,"");
   const items = DIR
-    .filter(p=>(filtro==="todas" || (filtro==="destacadas"&&p.destacado) || (filtro==="frecuentes"&&p.menciones>=10)) &&
+    .filter(p=>(filtro==="todas" || (filtro==="destacadas"&&p.destacado) || (filtro==="frecuentes"&&p.menciones>=10) ||
+      (["persona","cargo","colectivo"].includes(filtro) && (p.tipo||"persona")===filtro)) &&
       (!q || norm(p.nombre+" "+(p.snippet||"")).includes(norm(q))))
     .sort((a,b)=>{ const va=valorDe(a,sortCol), vb=valorDe(b,sortCol); return (va<vb?-1:va>vb?1:0)*sortDir; });
   document.getElementById("total").textContent = items.length.toLocaleString("es");
   document.getElementById("tbody").innerHTML = items.map(p=>`
     <tr data-s="${esc(p.slug)}">
       <td><div class="actor">${avatar(p)}<div><b>${esc(p.nombre)}</b><small>${esc(p.snippet||"")}</small></div></div></td>
-      <td>${p.destacado?pill(p.clasificacion||"neutral", "★ "+(ETIQ[p.clasificacion]||"completo")):'<span style="color:var(--muted);font-size:.72rem">básico</span>'}</td>
+      <td>${p.destacado?pill(p.clasificacion||"neutral", "★ "+(ETIQ[p.clasificacion]||"completo")):`<span style="color:var(--muted);font-size:.72rem">${esc(p.tipo||"persona")}</span>`}</td>
       <td class="num">${p.menciones.toLocaleString("es")}</td>
     </tr>`).join("") || `<tr><td colspan="3" style="color:var(--muted)">Sin resultados.</td></tr>`;
   document.querySelectorAll("#tbody tr[data-s]").forEach(tr=>tr.onclick=()=>abrir(tr.dataset.s));
@@ -425,6 +426,12 @@ def main() -> int:
         ficha["slug"] = s
         ficha["foto"] = f"fotos/{s}.jpg" if s in fotos else ""
         if completo:
+            union = list(completo.get("referencias") or [])
+            vistos = {(r.get("url"), r.get("timestamp")) for r in union}
+            for ref in persona.get("referencias", []):
+                if (ref.get("url"), ref.get("timestamp")) not in vistos:
+                    union.append(ref)
+                    vistos.add((ref.get("url"), ref.get("timestamp")))
             ficha.update(
                 {
                     "destacado": True,
@@ -434,8 +441,8 @@ def main() -> int:
                     "caracteristicas": completo.get("caracteristicas", []),
                     "culpas": completo.get("culpas", []),
                     "declaraciones": completo.get("declaraciones", []),
-                    "referencias": completo.get("referencias") or persona.get("referencias", []),
-                    "menciones": len(completo.get("referencias") or persona.get("referencias", [])),
+                    "referencias": union,
+                    "menciones": len(union),
                 }
             )
         (DATA_DIR / f"{s}.json").write_text(json.dumps(ficha, ensure_ascii=False), encoding="utf-8")
@@ -445,6 +452,7 @@ def main() -> int:
                 "slug": s,
                 "menciones": ficha["menciones"],
                 "destacado": bool(completo),
+                "tipo": persona.get("tipo", "persona"),
                 "clasificacion": (completo or {}).get("clasificacion", ""),
                 "snippet": ((completo or {}).get("cargo") or persona.get("descripcion", ""))[:90],
                 "foto": ficha["foto"],
