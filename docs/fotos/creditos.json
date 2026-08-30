@@ -1,0 +1,44 @@
+{
+  "rodrigo_chaves_robles": {
+    "persona": "Rodrigo Chaves Robles",
+    "wikipedia": "https://es.wikipedia.org/wiki/Rodrigo_Chaves",
+    "archivo": "Rodrigo_Chaves_2022-5-16_Foto_by_Julieth_Mendez_(cropped).jpg",
+    "licencia": "CC BY-SA 4.0",
+    "autor": "Julieth Mendez"
+  },
+  "gabriel_aguilar": {
+    "persona": "Gabriel Aguilar",
+    "wikipedia": "https://es.wikipedia.org/wiki/Gabriel_Aguilar",
+    "archivo": "Gabriel_Aguilar.jpg",
+    "licencia": "Public domain",
+    "autor": "s/d. Siglo XIX"
+  },
+  "celso_gamboa": {
+    "persona": "Celso Gamboa",
+    "wikipedia": "https://es.wikipedia.org/wiki/Celso_Gamboa",
+    "archivo": "Celso_Manuel_Gamboa_Sanchez_mugshot.jpg",
+    "licencia": "Public domain",
+    "autor": "Agentes de la Sección de Estupefacientes del Organismo de Investigación Judicial"
+  },
+  "francisco_gamboa": {
+    "persona": "Francisco Gamboa",
+    "wikipedia": "https://es.wikipedia.org/wiki/Francisco_Gamboa",
+    "archivo": "Francisco_GamboaToluca.jpg",
+    "licencia": "CC BY 2.0",
+    "autor": "Hefebreo"
+  },
+  "rey_de_espana": {
+    "persona": "rey de España",
+    "wikipedia": "https://es.wikipedia.org/wiki/Rey_de_Espa%C3%B1a",
+    "archivo": "Daiga_Mieriņa_tiekas_ar_Spānijas_karali_-_53814974005_(cropped).jpg",
+    "licencia": "CC BY-SA 2.0",
+    "autor": "Saeima"
+  },
+  "claudia_dobles": {
+    "persona": "Claudia Dobles",
+    "wikipedia": "https://es.wikipedia.org/wiki/Claudia_Dobles_Camargo",
+    "archivo": "Claudia_Dobles_Camargo.jpg",
+    "licencia": "Public domain",
+    "autor": "Maynor Gerardo Solís Calderón/Asamblea Legislativa"
+  }
+}
