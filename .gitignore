@@ -4,8 +4,8 @@ __pycache__/
 *.pyc
 .DS_Store
 
-# Datos locales (corpus, audio, índices, grafos, clips, estado)
-data/
+# Datos locales (corpus, audio, índices, grafos, clips, estado) — solo el de la raíz
+/data/
 
 # Configuración local del asistente
 .claude/
