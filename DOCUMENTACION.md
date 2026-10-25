@@ -8,7 +8,7 @@ Es un **pipeline local de recolección y análisis de discursos públicos** del 
 
 1. **Recolección**: descubre videos y transmisiones del canal, obtiene su transcripción (subtítulos de YouTube o Whisper local) y las consolida en un archivo JSONL.
 2. **Indexado y consulta (RAG)**: trocea las transcripciones, las indexa en ChromaDB con embeddings de Ollama y permite hacer preguntas en lenguaje natural (con citas a fuente y timestamp) o búsquedas literales exhaustivas.
-3. **Análisis**: un dashboard de lingüística computacional (VAD, redes semánticas, polarización, entidades) y un extractor de perfiles de personas/temas con LangExtract.
+3. **Análisis**: un dashboard de lingüística computacional (VAD, redes semánticas, polarización, entidades y lenguaje de confrontación), un detector reproducible de frases agresivas y un extractor de perfiles de personas/temas con LangExtract.
 
 Todo corre en la máquina local; los únicos servicios externos opcionales son las APIs de OpenAI y Gemini como LLM de respuesta.
 
@@ -110,16 +110,29 @@ Interfaz web (`streamlit run streamlit_app.py`) sobre el motor anterior; no reim
 
 ### 3.4 Dashboard lingüístico — [streamlit_analysis_app.py](streamlit_analysis_app.py)
 
-Segunda app independiente (`streamlit run streamlit_analysis_app.py --server.port 8502`). Lee el JSONL directamente (no usa ChromaDB ni LLM), todo el análisis es **en memoria con léxicos en español embebidos en el módulo**; no escribe archivos.
+Segunda app independiente (`streamlit run streamlit_analysis_app.py --server.port 8502`). Lee el JSONL directamente y hace el análisis cuantitativo **en memoria con léxicos y reglas versionadas**; no escribe archivos. Solo la auditoría semántica opcional de lenguaje de confrontación consulta ChromaDB (embeddings de Ollama) y el grafo unificado.
 
 - **Selección**: multiselect de videos (default: el primero); el texto de los seleccionados se concatena para el análisis.
 - **KPIs**: tokens, vocabulario único, type-token ratio, densidad léxica (proporción de tokens fuera de stopwords), *arousal* y dominancia.
 - **Pestañas**:
   1. **Red Semántica y Comunidades**: grafo de co-ocurrencia de los top-N términos (slider 15–100, default 40) dentro de una ventana deslizante de tokens (slider 3–15, default 6), coloreado por **comunidades de Louvain**, layout spring de NetworkX, render Plotly. Incluye la tabla de aristas con pesos.
   2. **Estrategia de Discurso**: conteos de marcadores **in-group** (`nosotros`, `pueblo`, `costa rica`, `patria`…) vs **out-group** (`ellos`, `corruptos`, `comunismo`, `venezuela`, `cuba`…), balance de polarización, tasa de marcadores populistas por 1 000 tokens, y extracción de entidades (spaCy si hay modelo español instalado; si no, heurística de secuencias capitalizadas — ver observación §6.2).
-  3. **Histórico Temporal**: puntuaciones **VAD** (valencia, activación, dominancia) calculadas por ventanas de **12 segmentos** de la transcripción, graficadas contra el segundo del video, con tabla que incluye timestamps.
-  4. **Distribución de Frecuencias**: top de términos sin stopwords en barra horizontal.
+  3. **Lenguaje de confrontación**: aplica `scripts/aggressive_language.py`, muestra conteo total, tasas por registro y por 1 000 palabras, marco nosotros/ellos, distribución por categoría y tabla auditable con cláusula, hablante/blanco sugeridos y enlace al segundo exacto. Un expander opcional recupera pasajes semánticamente cercanos desde ChromaDB y añade relaciones del grafo; son candidatos y no alteran el conteo.
+  4. **Histórico Temporal**: puntuaciones **VAD** (valencia, activación, dominancia) calculadas por ventanas de **12 segmentos** de la transcripción, graficadas contra el segundo del video, con tabla que incluye timestamps.
+  5. **Distribución de Frecuencias**: top de términos sin stopwords en barra horizontal.
 - **Método VAD**: heurístico por léxico (`VAD_LEXICON`): cuenta apariciones de palabras clasificadas como valencia positiva/negativa, arousal o dominancia, normalizadas por `sqrt(total de tokens)`; la valencia es `positivos − negativos`. El texto se normaliza a minúsculas sin tildes antes de contar.
+
+#### Detector de frases agresivas — [aggressive_language.py](scripts/aggressive_language.py)
+
+La versión `frase-agresiva-ln-ejemplos-v1` operacionaliza como unidad una **cláusula que caracteriza negativamente a una persona, grupo o institución identificable** mediante una o más de ocho familias: animalización; enfermedad/suciedad/deterioro; ridiculización/infantilización; deshonestidad/deslegitimación; criminalización/condena moral; incapacidad/irracionalidad; parasitismo/privilegio; enemigo/amenaza. Una crítica de política pública o una mención literal de animales, enfermedad o delito no basta. Varias marcas dentro de la misma cláusula forman un solo evento multicategoría; repeticiones equivalentes dentro de 75 segundos se deduplican.
+
+El núcleo es determinista y no requiere modelo: normaliza el texto conservando offsets, aplica reglas contextuales, excluye negaciones y usos literales conocidos, alinea cada evento al segmento temporal y devuelve frase, contexto, marcadores, categorías, confianza, hablante/blanco heurísticos, marco nosotros/ellos y URL con timestamp. El CLI filtra por fecha o `video_id` y escribe `data/frases_agresivas.json` por defecto. La función `semantic_candidates` constituye una segunda capa de **descubrimiento**, no de medición: formula ocho consultas prototipo sobre la selección, recupera los chunks cercanos en ChromaDB y llama a `graph_context` para añadir relaciones de las entidades mencionadas. Incorporar una formulación descubierta al conteo exige agregar una regla y una prueba, para que los resultados históricos sigan siendo comparables.
+
+```bash
+python scripts/aggressive_language.py --date-after 2026-05-01
+python scripts/aggressive_language.py --video-id g4-Ymq8IAeo --output -
+python -m unittest discover -s tests -v
+```
 
 ### 3.5 Extractor de perfiles — [extract_relations.py](scripts/extract_relations.py)
 
@@ -163,6 +176,7 @@ Cierra el ciclo pregunta → respuesta → **video**: el LLM responde citando `[
 | `data/state.sqlite` | Tabla `videos(video_id PK, status, source, upload_date, title, updated_at, error)`. Estados: `discovered`, `done`, `failed`, `no_transcript`, `deferred_live`. |
 | `data/audio/*.mp3` | Audios descargados para Whisper (persisten si la corrida usó `--keep-audio` o quedó interrumpida). |
 | `data/chroma/` | Índice vectorial persistente de ChromaDB (colección `presidencia_transcripts`). |
+| `data/frases_agresivas.json` | Reporte opcional del detector: metadatos del método, resumen agregado y eventos auditables con timestamp. |
 | `data/interview_candidates.json` | Cola de validación de entrevistas en medios: candidatos con estado `pending` → `approved`/`rejected` → `processed`, más el mapa de descartes automáticos con su razón. |
 | `data/grafos/` | Grafos de conocimiento generados con textgraph: `<slug>.json`, `<slug>.html` (visor autónomo) y `<slug>.llm.md` por grafo. |
 | `data/clips/<slug>_<fecha>/` | Corridas de cortes de video: MP4 por clip citado, `manifest.json`, `respuesta.md` y `compilacion.mp4` opcional. |

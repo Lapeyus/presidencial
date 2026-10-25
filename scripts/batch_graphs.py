@@ -63,6 +63,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--paralelo", type=int, default=2)
     parser.add_argument("--limite", type=int, help="Procesar solo N videos pendientes (pruebas).")
     parser.add_argument("--solo-unificar", action="store_true")
+    parser.add_argument("--rebuild-unificado", action="store_true",
+                        help="Reconstruir el unificado desde cero aunque el existente tenga limpieza aplicada (la descarta).")
     parser.add_argument("--timeout-video", type=int, default=7200)
     return parser.parse_args()
 
@@ -205,6 +207,21 @@ def unify(args: argparse.Namespace) -> dict | None:
     sys.path.insert(0, str(args.textgraph_dir))
     from textgraph import analysis, exporters, normalize, store  # noqa: E402
     from textgraph.model import Edge, Graph, Node  # noqa: E402
+
+    # El unificado se reconstruye desde cero: eso DESCARTA correcciones de
+    # etiquetas, poda de basura y fusiones ya aplicadas por
+    # refine_unified_graph.py. Para sumar videos nuevos conservando la
+    # limpieza, usar scripts/merge_into_unified.py.
+    destino_json = UNIFIED_DIR / "grafo_unificado.json"
+    if destino_json.exists() and not args.rebuild_unificado:
+        try:
+            previo = json.loads(destino_json.read_text(encoding="utf-8"))
+            if (previo.get("meta") or {}).get("limpieza"):
+                log("unificado: el existente tiene limpieza aplicada; NO se reconstruye "
+                    "(usa scripts/merge_into_unified.py --videos ... o --rebuild-unificado para forzar)")
+                return None
+        except Exception:
+            pass
 
     paths = sorted(PER_VIDEO_DIR.glob("*/*.json"))
     if not paths:

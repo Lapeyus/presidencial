@@ -201,6 +201,10 @@ La segunda app permite explorar las transcripciones con metricas de linguistica 
 - Red semantica de co-ocurrencias.
 - Entidades nombradas con SpaCy si hay modelo espanol instalado, o fallback heuristico.
 - Marcadores in-group/out-group y populismo.
+- Frases agresivas por cláusula, clasificadas por recurso retórico, hablante/blanco
+  sugeridos y enlace al segundo exacto del video.
+- Auditoría semántica opcional: busca formulaciones nuevas en ChromaDB y muestra
+  el contexto de las entidades recuperado del grafo de conocimiento.
 - Timeline emocional por segmentos con enlaces a timestamps.
 
 ```bash
@@ -212,6 +216,31 @@ Para mejorar NER en espanol:
 ```bash
 python -m spacy download es_core_news_sm
 ```
+
+### Frases agresivas y construcción del adversario
+
+El criterio versionado vive en `scripts/aggressive_language.py`. Cuenta una
+**cláusula** cuando caracteriza negativamente a una persona, grupo o institución
+identificable mediante animalización; metáforas de enfermedad/suciedad;
+ridiculización o infantilización; deshonestidad/deslegitimación;
+criminalización o condena moral; incapacidad/irracionalidad;
+parasitismo/privilegio; o construcción como enemigo/amenaza. No basta una crítica
+de política pública ni un uso literal de animales, enfermedad o delito.
+
+El detector conserva frase, contexto, categoría, confianza, hablante y blanco
+sugeridos, marco nosotros/ellos y URL con timestamp. Para generar un reporte JSON:
+
+```bash
+python scripts/aggressive_language.py --date-after 2026-05-01
+python scripts/aggressive_language.py --video-id g4-Ymq8IAeo --output -
+```
+
+La salida por defecto es `data/frases_agresivas.json`. La pestaña **Lenguaje de
+confrontación** ejecuta el mismo detector. Su auditoría semántica usa ChromaDB +
+Ollama y el grafo unificado para descubrir pasajes candidatos; estos no entran en
+las métricas hasta que una regla explícita y una prueba de regresión los validen.
+Antes de publicar una atribución se debe revisar el video enlazado: la herramienta
+clasifica lenguaje, no determina si una acusación es verdadera.
 
 ## Grafos de conocimiento (textgraph)
 

@@ -2,7 +2,7 @@
 
 Carga las transcripciones del canal de YouTube de la Presidencia desde un archivo
 JSONL (por defecto ``data/presidencia_transcripts.jsonl``, ruta editable desde la
-barra lateral) y ofrece un panel interactivo con cuatro pestañas:
+barra lateral) y ofrece un panel interactivo con cinco pestañas:
 
 * **Red Semántica y Comunidades**: grafo de co-ocurrencia de términos con detección
   de comunidades de Louvain y matriz de adyacencia expandible.
@@ -12,6 +12,8 @@ barra lateral) y ofrece un panel interactivo con cuatro pestañas:
 * **Histórico Temporal**: evolución de las puntuaciones VAD (valencia, activación,
   dominancia) por ventanas de segmentos dentro de cada video.
 * **Distribución de Frecuencias**: términos más frecuentes sin stopwords.
+* **Lenguaje de confrontación**: frases agresivas reproducibles, clasificadas y
+  enlazadas al momento exacto de la fuente.
 
 Los análisis usan léxicos en español definidos en este módulo (VAD_LEXICON,
 IN_GROUP_TERMS, OUT_GROUP_TERMS, POPULIST_TERMS) y normalizan el texto quitando
@@ -37,6 +39,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+
+from scripts import aggressive_language as aggressive
 
 # --- CONFIGURACIÓN DE PARÁMETROS Y LÉXICOS ---
 DEFAULT_TRANSCRIPTS: Final[Path] = Path("data/presidencia_transcripts.jsonl")
@@ -403,6 +407,7 @@ def main() -> None:
     metrics = lexical_metrics(combined_text)
     vad = vad_scores(combined_text)
     discourse = discourse_scores(combined_text)
+    aggressive_events = aggressive.scan_records(chosen)
 
     st.markdown("### 📊 Métricas Cuantitativas de Control")
     kpis = st.columns(6)
@@ -413,8 +418,14 @@ def main() -> None:
     kpis[4].metric("Arousal Emocional", f"{vad['arousal']:.2f}")
     kpis[5].metric("Índice de Dominancia", f"{vad['dominance']:.2f}")
 
-    tab_network, tab_discourse, tab_timeline, tab_lexicon = st.tabs(
-        ["🕸️ Red Semántica y Comunidades", "📢 Estrategia de Discurso", "📈 Histórico Temporal", "🔤 Distribución de Frecuencias"]
+    tab_network, tab_discourse, tab_aggressive, tab_timeline, tab_lexicon = st.tabs(
+        [
+            "🕸️ Red Semántica y Comunidades",
+            "📢 Estrategia de Discurso",
+            "⚠️ Lenguaje de confrontación",
+            "📈 Histórico Temporal",
+            "🔤 Distribución de Frecuencias",
+        ]
     )
 
     with tab_network:
@@ -444,6 +455,133 @@ def main() -> None:
             st.info("No se encontraron entidades registradas.")
         else:
             st.plotly_chart(px.bar(entities_df.head(25), x="count", y="entity", color="label", orientation="h", title="Top 25 Entidades Más Citadas"), use_container_width=True)
+
+    with tab_aggressive:
+        st.markdown("#### Frases agresivas y construcción del adversario")
+        with st.expander("Definición operacional y límites", expanded=False):
+            st.write(aggressive.DEFINITION)
+            st.caption(
+                f"Método {aggressive.METHOD_VERSION}. La unidad es la cláusula. "
+                "El detector identifica lenguaje, no prueba la veracidad de las acusaciones. "
+                "Hablante y blanco son inferencias cuando la transcripción no tiene diarización."
+            )
+
+        aggressive_summary = aggressive.summarize(chosen, aggressive_events)
+        acols = st.columns(5)
+        acols[0].metric("Frases detectadas", aggressive_summary["events"])
+        acols[1].metric("Por conferencia", f"{aggressive_summary['events_per_record']:.2f}")
+        acols[2].metric("Por 1.000 palabras", f"{aggressive_summary['events_per_1000_words']:.2f}")
+        acols[3].metric("Marco nosotros/ellos", aggressive_summary["us_them_events"])
+        acols[4].metric(
+            "Alta confianza",
+            sum(event.confidence >= 0.90 for event in aggressive_events),
+        )
+
+        if not aggressive_events:
+            st.info("No se detectaron frases con la definición y el umbral actuales.")
+        else:
+            category_rows = [
+                {"Categoría": category.replace("_", " ").title(), "Eventos": count}
+                for category, count in aggressive_summary["by_category"].items()
+            ]
+            st.plotly_chart(
+                px.bar(
+                    pd.DataFrame(category_rows),
+                    x="Eventos",
+                    y="Categoría",
+                    orientation="h",
+                    title="Recursos de confrontación detectados",
+                ),
+                use_container_width=True,
+            )
+
+            event_rows = [
+                {
+                    "Fecha": event.date,
+                    "Momento": event.timestamp,
+                    "Hablante (estimado)": event.speaker,
+                    "Blanco (sugerido)": event.target,
+                    "Categoría": ", ".join(event.labels),
+                    "Frase": event.phrase,
+                    "Confianza": event.confidence,
+                    "Nosotros/ellos": "sí" if event.us_them_frame else "no",
+                    "Fuente": event.url,
+                }
+                for event in aggressive_events
+            ]
+            st.dataframe(
+                pd.DataFrame(event_rows),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Fuente": st.column_config.LinkColumn("Fuente", display_text="Abrir video ↗"),
+                    "Confianza": st.column_config.ProgressColumn(
+                        "Confianza", min_value=0.0, max_value=1.0, format="%.2f"
+                    ),
+                },
+            )
+            st.caption(
+                "Antes de publicar una atribución, abra el video: la confianza mide la regla lingüística, "
+                "no la certeza del hablante ni del blanco."
+            )
+
+        with st.expander("Auditoría semántica: buscar formulaciones nuevas", expanded=False):
+            st.write(
+                "La base vectorial recupera pasajes parecidos a las ocho categorías y el grafo aporta "
+                "contexto sobre los actores mencionados. Son candidatos para revisión: no alteran las "
+                "métricas hasta convertirse en una regla versionada y una prueba de regresión."
+            )
+            semantic_top_k = st.slider(
+                "Pasajes por categoría",
+                min_value=1,
+                max_value=10,
+                value=4,
+                key="aggressive_semantic_top_k",
+            )
+            selection_key = tuple(sorted(selected_ids))
+            if st.button("Buscar en BD vectorial + grafo", key="aggressive_semantic_search"):
+                try:
+                    with st.spinner("Consultando las ocho categorías semánticas…"):
+                        rows = aggressive.semantic_candidates(
+                            selected_ids,
+                            top_k_per_category=semantic_top_k,
+                        )
+                    st.session_state["aggressive_semantic_audit"] = {
+                        "selection": selection_key,
+                        "rows": rows,
+                    }
+                except Exception as exc:
+                    st.error(f"No fue posible ejecutar la auditoría semántica: {exc}")
+
+            audit = st.session_state.get("aggressive_semantic_audit") or {}
+            if audit.get("selection") == selection_key:
+                candidate_rows = []
+                for candidate in audit.get("rows", []):
+                    metadata = candidate.get("metadata") or {}
+                    candidate_rows.append(
+                        {
+                            "Categorías sugeridas": ", ".join(
+                                category.replace("_", " ") for category in candidate.get("categories", [])
+                            ),
+                            "Pasaje candidato": candidate.get("text", ""),
+                            "Distancia vectorial": candidate.get("distance"),
+                            "Contexto del grafo": candidate.get("graph_context", ""),
+                            "Fuente": metadata.get("timestamp_url") or metadata.get("url", ""),
+                        }
+                    )
+                if candidate_rows:
+                    st.dataframe(
+                        pd.DataFrame(candidate_rows),
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Fuente": st.column_config.LinkColumn("Fuente", display_text="Abrir video ↗"),
+                            "Distancia vectorial": st.column_config.NumberColumn(format="%.3f"),
+                        },
+                    )
+                    st.caption("Menor distancia significa mayor cercanía semántica; no equivale a probabilidad.")
+                else:
+                    st.info("La consulta no devolvió candidatos para la selección actual.")
 
     with tab_timeline:
         st.markdown("#### Fluctuación de Carga Emocional en el Tiempo de la Conferencia")

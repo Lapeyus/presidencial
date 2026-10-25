@@ -12,3 +12,15 @@ __pycache__/
 
 # Logs
 *.log
+
+# Dependencias y salidas locales
+node_modules/
+output/
+tmp/
+# Informes y artículos (no son código; repo público): respaldados en el bucket privado
+*.docx
+informe_*.md
+generate_full_report.py
+generate_docx.py
+scripts/build_articulo_opinion.js
+scripts/build_informe_ampliado.js

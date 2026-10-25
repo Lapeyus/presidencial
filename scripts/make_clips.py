@@ -252,14 +252,30 @@ def drawtext_available() -> bool:
         return False
 
 
-def build_compilation(clips: list[dict], rundir: Path, destination: Path, rotulos: bool) -> bool:
-    """Re-encodea los clips a formato uniforme (con rótulo opcional) y los concatena."""
+def build_compilation(clips: list[dict], rundir: Path, destination: Path, rotulos: bool, separadores: bool = True) -> bool:
+    """Re-encodea los clips a formato uniforme (con rótulo opcional) y los concatena.
+
+    Con ``separadores`` intercala un corte a negro de 0.7 s entre clips para
+    que cada cambio de segmento sea inequívoco aun sin rótulos.
+    """
     workdir = rundir / ".compilacion_tmp"
     workdir.mkdir(exist_ok=True)
     uniform: list[Path] = []
     use_font = rotulos and Path(FONT_FILE).exists() and drawtext_available()
     if rotulos and not use_font:
         print("  (ffmpeg sin filtro drawtext o sin fuente; el montaje sale sin rótulos)", flush=True)
+    separador: Path | None = None
+    if separadores and len(clips) > 1:
+        separador = workdir / "sep.mp4"
+        sep = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+             "-f", "lavfi", "-i", "color=black:s=1280x720:r=30:d=0.7",
+             "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "0.7",
+             "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-ar", "44100", str(separador)],
+            capture_output=True, text=True,
+        )
+        if sep.returncode != 0:
+            separador = None
     try:
         for index, clip in enumerate(clips):
             source = rundir / clip["file"]
@@ -284,7 +300,12 @@ def build_compilation(clips: list[dict], rundir: Path, destination: Path, rotulo
                 return False
             uniform.append(out)
         concat_list = workdir / "list.txt"
-        concat_list.write_text("".join(f"file '{p.resolve()}'\n" for p in uniform), encoding="utf-8")
+        piezas: list[Path] = []
+        for posicion, pieza in enumerate(uniform):
+            if separador is not None and posicion:
+                piezas.append(separador)
+            piezas.append(pieza)
+        concat_list.write_text("".join(f"file '{p.resolve()}'\n" for p in piezas), encoding="utf-8")
         result = subprocess.run(
             ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0",
              "-i", str(concat_list), "-c", "copy", str(destination)],
